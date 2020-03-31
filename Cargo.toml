@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 sha3 = "0.8.2"
+nom = "5.1.1"

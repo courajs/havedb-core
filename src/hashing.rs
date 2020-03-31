@@ -20,8 +20,7 @@ impl ContentHashed for FullValue {
         match self {
             FullValue::Blob(bytes) => hasher.input(bytes),
             FullValue::Sum(discriminant, inner) => {
-                let a = [*discriminant];
-                hasher.input(&a);
+                hasher.input(&discriminant.to_be_bytes()[..]);
                 let h = inner.hash();
                 hasher.input(&h.0);
             },
@@ -46,8 +45,7 @@ impl ContentHashed for ValueFragment {
             }
             ValueFragment::Sum(discriminant, inner) => {
                 let mut hasher = Sha3_256::new();
-                let a = [*discriminant];
-                hasher.input(&a);
+                hasher.input(&discriminant.to_be_bytes()[..]);
                 let h = inner.hash();
                 hasher.input(&h.0);
                 finish(hasher)
