@@ -1,8 +1,23 @@
+use std::ops::Deref;
+use std::convert::AsRef;
 use sha3::{Digest, Sha3_256};
 use crate::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hash(pub [u8; 32]);
+
+impl Deref for Hash {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
+impl AsRef<[u8]> for Hash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
 
 pub trait ContentHashed {
     fn hash(&self) -> Hash;
