@@ -1,6 +1,6 @@
 use nom::{
     combinator::map,
-    bytes::complete::tag,
+    bytes::complete::{tag, take},
     branch::alt,
     multi::length_data,
     number::complete::{
@@ -40,6 +40,22 @@ where
 }
 
 impl FullValue {
+    pub fn clone_fragment(&self) -> ValueFragment {
+        match self {
+            FullValue::Blob(v) => ValueFragment::Blob(v.clone()),
+            FullValue::Sum(discrim, inner) => ValueFragment::Sum(*discrim, Box::new(inner.clone_fragment())),
+            FullValue::Product(inners) => ValueFragment::Product(inners.iter().map(FullValue::clone_fragment).collect()),
+        }
+    }
+
+    pub fn to_fragment(self) -> ValueFragment {
+        match self {
+            FullValue::Blob(v) => ValueFragment::Blob(v),
+            FullValue::Sum(discrim, inner) => ValueFragment::Sum(discrim, Box::new(inner.to_fragment())),
+            FullValue::Product(inners) => ValueFragment::Product(inners.into_iter().map(FullValue::to_fragment).collect()),
+        }
+    }
+
     pub fn serialize(&self) -> Vec<u8> {
         let mut v = Vec::with_capacity(self.size());
         self.serialize_into(&mut v);
@@ -112,6 +128,86 @@ impl FullValue {
     }
 }
 
+impl ValueFragment {
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut v = Vec::with_capacity(self.size());
+        self.serialize_into(&mut v);
+        v
+    }
+
+    pub fn serialize_into(&self, w: &mut Vec<u8>) {
+        match self {
+            ValueFragment::Blob(v) => {
+                w.push(0);
+                let len = v.len() as u64;
+                w.extend_from_slice(&len.to_be_bytes()[..]);
+                w.extend_from_slice(v);
+            }
+            ValueFragment::Sum(discrim, inner) => {
+                w.push(1);
+                w.extend_from_slice(&discrim.to_be_bytes()[..]);
+                inner.serialize_into(w);
+            }
+            ValueFragment::Product(inners) => {
+                w.push(2);
+                let len = inners.len() as u32;
+                w.extend_from_slice(&len.to_be_bytes()[..]);
+                for inner in inners {
+                    inner.serialize_into(w);
+                }
+            }
+            ValueFragment::Reference(h) => {
+                w.push(3);
+                w.extend_from_slice(&h.0);
+            }
+        }
+    }
+
+    pub fn deserialize(r: &[u8]) -> Result<Self, String> {
+        fn parse_it(input: &[u8]) -> nom::IResult<&[u8], ValueFragment, nom::error::VerboseError<&[u8]>> {
+            alt((
+                preceded(tag([0]),
+                    map(length_data(be_u64),
+                    |bytes| ValueFragment::Blob(Vec::from(bytes)))),
+                preceded(tag([1]),
+                    map(tuple((be_u32, parse_it)),
+                    |(discrim, inner)| ValueFragment::Sum(discrim, Box::new(inner)))),
+                preceded(tag([2]),
+                    map(length_count(be_u32, parse_it), ValueFragment::Product)),
+                preceded(tag([3]),
+                    map(take(32u8), |h| ValueFragment::Reference(Hash::sure_from_slice(h)))),
+            ))(input)
+        }
+
+        match parse_it(r) {
+            Ok((rest, it)) => {
+                if rest.len() > 0 {
+                    Err(format!("deserializing a ValueFragment left {} bytes unconsumed", rest.len()))
+                } else {
+                    Ok(it)
+                }
+            },
+            Err(e) => Err(format!("{}", e))
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        // 1 byte to distinguish enum branch, plus size of contents
+        1usize + match self {
+            // u64 for size of blob, plus the actual content
+            ValueFragment::Blob(v) => 8 + v.len(),
+            // u32 for discriminant
+            ValueFragment::Sum(_, inner) => 4 + inner.size(),
+            // u32 for number of fields
+            ValueFragment::Product(inners) => {
+                let sub: usize = inners.iter().map(|x|x.size()).sum();
+                sub + 4
+            },
+            ValueFragment::Reference(_) => 32,
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -128,5 +224,25 @@ mod tests {
 
         dbg!(&v);
         assert_eq!(FullValue::deserialize(&v).unwrap(), val);
+    }
+
+    #[test]
+    fn full_fragment_equivalence() {
+        let val = FullValue::Product(vec![
+            FullValue::Sum(4, Box::new(FullValue::Blob(vec![1, 2, 3]))),
+            FullValue::Blob(vec![2,3,4,5]),
+        ]);
+        let buf = val.serialize();
+
+        let frag = ValueFragment::deserialize(&buf[..]).unwrap();
+        assert_eq!(frag, val.to_fragment());
+    }
+
+    #[test]
+    fn fragment_reference() {
+        let h = Hash::of(b"owl");
+        let f = ValueFragment::Sum(1, Box::new(ValueFragment::Reference(h)));
+        let buf = f.serialize();
+        assert_eq!(ValueFragment::deserialize(&buf).unwrap(), f);
     }
 }

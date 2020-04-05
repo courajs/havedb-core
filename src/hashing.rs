@@ -6,6 +6,22 @@ use crate::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hash(pub [u8; 32]);
 
+impl Hash {
+    pub fn sure_from_slice(value: &[u8]) -> Hash {
+        let mut val = [0; 32];
+        val.copy_from_slice(value);
+        Hash(val)
+    }
+    pub fn of(bytes: &[u8]) -> Hash {
+        let mut hasher = Sha3_256::new();
+        hasher.input(bytes);
+
+        let mut val = [0; 32];
+        val.copy_from_slice(hasher.result().as_ref());
+        Hash(val)
+    }
+}
+
 impl Deref for Hash {
     type Target = [u8];
 
