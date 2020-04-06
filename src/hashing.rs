@@ -3,7 +3,7 @@ use std::convert::AsRef;
 use sha3::{Digest, Sha3_256};
 use crate::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Hash(pub [u8; 32]);
 
 impl Hash {
@@ -19,6 +19,17 @@ impl Hash {
         let mut val = [0; 32];
         val.copy_from_slice(hasher.result().as_ref());
         Hash(val)
+    }
+}
+use std::fmt::{self,Debug,Display};
+impl Debug for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "sha-256:{}", hex::encode(self.0))
+    }
+}
+impl Display for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#{}", hex::encode(&self.0[..4]))
     }
 }
 

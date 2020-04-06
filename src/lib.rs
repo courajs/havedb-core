@@ -14,6 +14,25 @@ pub enum ValueFragment {
     Reference(Hash),
 }
 
+impl FullValue {
+    pub fn clone_fragment(&self) -> ValueFragment {
+        match self {
+            FullValue::Blob(v) => ValueFragment::Blob(v.clone()),
+            FullValue::Sum(discrim, inner) => ValueFragment::Sum(*discrim, Box::new(inner.clone_fragment())),
+            FullValue::Product(inners) => ValueFragment::Product(inners.iter().map(FullValue::clone_fragment).collect()),
+        }
+    }
+
+    pub fn to_fragment(self) -> ValueFragment {
+        match self {
+            FullValue::Blob(v) => ValueFragment::Blob(v),
+            FullValue::Sum(discrim, inner) => ValueFragment::Sum(discrim, Box::new(inner.to_fragment())),
+            FullValue::Product(inners) => ValueFragment::Product(inners.into_iter().map(FullValue::to_fragment).collect()),
+        }
+    }
+
+}
+
 mod hashing;
 pub use hashing::*;
 mod sede;
